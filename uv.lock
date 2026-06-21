@@ -252,7 +252,7 @@ wheels = [
 ]
 
 [[package]]
-name = "flask-bdd"
+name = "flask-pytesst-bdd-and-openapi-libs"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

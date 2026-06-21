@@ -1,5 +1,5 @@
 # ============================================================
-# flask-bdd — Flask BDD integration testing template
+# flask-pytesst-bdd-and-openapi-libs — Flask BDD integration testing template
 # Tools: uv + ruff + pyright + pydantic v2
 # Python 3.12+
 # ============================================================
@@ -9,7 +9,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "flask-bdd"
+name = "flask-pytesst-bdd-and-openapi-libs"
 version = "0.1.0"
 description = "Flask BDD integration testing template with testcontainers, OpenAPI, and Pydantic v2"
 authors = [{ name = "Giovanni de Almeida Martins", email = "giovannidealmeidamartins@gmail.com" }]
