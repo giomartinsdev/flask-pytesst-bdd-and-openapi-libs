@@ -1,0 +1,10 @@
+.venv
+.git
+.github
+.pytest_cache
+.coverage
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+*-openapi.json

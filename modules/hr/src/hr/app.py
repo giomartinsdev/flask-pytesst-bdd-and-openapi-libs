@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from .db import Base
 from .blueprint import hr_bp
 from . import models  # noqa: F401 — registers Employee with Base
+from lib.openapi import install_openapi_route
 
 
 def create_app(db_url: Optional[str] = None) -> Flask:
@@ -18,4 +19,5 @@ def create_app(db_url: Optional[str] = None) -> Flask:
     Base.metadata.create_all(engine)
     app.config["SESSION_FACTORY"] = sessionmaker(bind=engine)
     app.register_blueprint(hr_bp)
+    install_openapi_route(app, title="HR API", version="0.1.0")
     return app

@@ -3,9 +3,11 @@ import os
 
 _tests_dir = os.path.dirname(os.path.abspath(__file__))
 _src_dir = os.path.abspath(os.path.join(_tests_dir, "..", "src"))
-_modules_dir = os.path.abspath(os.path.join(_tests_dir, "..", ".."))
+_lib_dir = os.path.abspath(os.path.join(_tests_dir, "..", "..", "lib"))
+_pytest_bdd_utils = os.path.join(_lib_dir, "pytest-bdd-utils")
+_openapi_flask_utils = os.path.join(_lib_dir, "openapi-flask-utils")
 
-for _p in (_src_dir, _modules_dir, _tests_dir):
+for _p in (_src_dir, _pytest_bdd_utils, _openapi_flask_utils, _tests_dir):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
