@@ -1,36 +1,31 @@
-from dataclasses import dataclass
 from datetime import date
-from typing import Optional
+
+from pydantic import BaseModel
 
 
-@dataclass
-class HireRequest:
+class HireRequest(BaseModel):
     name: str
     email: str
     role: str
     salary: float
-    area_id: Optional[int] = None
-    hire_date: Optional[date] = None
-    role_since: Optional[date] = None
+    area_id: int | None = None
+    hire_date: date | None = None
+    role_since: date | None = None
 
 
-@dataclass
-class PromoteRequest:
+class PromoteRequest(BaseModel):
     salary_increase_pct: float
 
 
-@dataclass
-class AssignManagerRequest:
+class AssignManagerRequest(BaseModel):
     manager_id: int
 
 
-@dataclass
-class AssignAreaRequest:
+class AssignAreaRequest(BaseModel):
     area_id: int
 
 
-@dataclass
-class EmployeeFilters:
-    area_id: Optional[int] = None
-    role: Optional[str] = None
-    active: Optional[bool] = None
+class EmployeeFilters(BaseModel):
+    area_id: int | None = None
+    role: str | None = None
+    active: bool | None = None

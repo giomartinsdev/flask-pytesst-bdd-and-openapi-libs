@@ -1,30 +1,32 @@
-import os
+from collections.abc import Generator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from typing import Any, Dict, Generator, List, Optional
+import os
+from typing import Any
 
 import boto3
-from sqlalchemy import Engine, create_engine, text
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from lib.config import BDDConfig
 
 
-@dataclass
-class BDDInfra:
+class BDDInfra(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     config: BDDConfig
     db_url: str
-    db_engine: Engine
+    db_engine: Any  # sqlalchemy.Engine
     sqs: Any
     sns: Any
     s3: Any
     aws_endpoint: str
-    queue_urls: Dict[str, str] = field(default_factory=dict)
-    topic_arns: Dict[str, str] = field(default_factory=dict)
+    queue_urls: dict[str, str] = Field(default_factory=dict)
+    topic_arns: dict[str, str] = Field(default_factory=dict)
     # Auto-created per SNS topic: {topic_name: capture_queue_url}
     # Each capture queue is subscribed to its topic so SNS publishes can be asserted via SQS.
-    sns_capture_urls: Dict[str, str] = field(default_factory=dict)
-    _containers: List[Any] = field(default_factory=list, repr=False)
+    sns_capture_urls: dict[str, str] = Field(default_factory=dict)
+    containers: list[Any] = Field(default_factory=list)
 
     def make_session(self) -> Session:
         return sessionmaker(bind=self.db_engine)()
@@ -79,7 +81,9 @@ class BDDInfra:
             session.close()
 
     def drain_all_queues(self) -> None:
-        for url in list(self.queue_urls.values()) + list(self.sns_capture_urls.values()):
+        for url in list(self.queue_urls.values()) + list(
+            self.sns_capture_urls.values()
+        ):
             _drain_queue(self.sqs, url)
 
     def truncate_tables(self, *table_names: str) -> None:
@@ -88,17 +92,19 @@ class BDDInfra:
                 _sqlserver_truncate(conn, table_names)
             else:
                 for table in table_names:
-                    conn.execute(text(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE"))
+                    conn.execute(
+                        text(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
+                    )
             conn.commit()
 
     def stop(self) -> None:
         self.db_engine.dispose()
-        for c in self._containers:
+        for c in self.containers:
             c.stop()
 
     @classmethod
     def from_config(cls, config: BDDConfig) -> "BDDInfra":
-        containers: List[Any] = []
+        containers: list[Any] = []
 
         if config.db_url:
             db_url = config.db_url
@@ -113,22 +119,22 @@ class BDDInfra:
         if config.db_base is not None:
             config.db_base.metadata.create_all(engine)
 
-        boto_kwargs = dict(
-            endpoint_url=aws_endpoint,
-            region_name=config.aws_region,
-            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID", "test"),
-            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", "test"),
-        )
+        boto_kwargs = {
+            "endpoint_url": aws_endpoint,
+            "region_name": config.aws_region,
+            "aws_access_key_id": os.environ.get("AWS_ACCESS_KEY_ID", "test"),
+            "aws_secret_access_key": os.environ.get("AWS_SECRET_ACCESS_KEY", "test"),
+        }
         sqs = boto3.client("sqs", **boto_kwargs)
         sns = boto3.client("sns", **boto_kwargs)
-        s3  = boto3.client("s3",  **boto_kwargs)
+        s3 = boto3.client("s3", **boto_kwargs)
 
-        queue_urls: Dict[str, str] = {}
+        queue_urls: dict[str, str] = {}
         for name in config.sqs_queues:
             sqs.create_queue(QueueName=name)
             queue_urls[name] = sqs.get_queue_url(QueueName=name)["QueueUrl"]
 
-        topic_arns: Dict[str, str] = {}
+        topic_arns: dict[str, str] = {}
         for name in config.sns_topics:
             topic_arns[name] = sns.create_topic(Name=name)["TopicArn"]
 
@@ -137,7 +143,7 @@ class BDDInfra:
 
         # For each SNS topic, create a dedicated capture queue and subscribe it.
         # Tests can poll infra.sns_capture_urls[topic_name] via assert_sns_message().
-        sns_capture_urls: Dict[str, str] = {}
+        sns_capture_urls: dict[str, str] = {}
         for topic_name, topic_arn in topic_arns.items():
             capture_name = f"{topic_name}-capture"
             sqs.create_queue(QueueName=capture_name)
@@ -159,11 +165,12 @@ class BDDInfra:
             queue_urls=queue_urls,
             topic_arns=topic_arns,
             sns_capture_urls=sns_capture_urls,
-            _containers=containers,
+            containers=containers,
         )
 
 
 # ── Table truncation ───────────────────────────────────────────────────────────
+
 
 def _sqlserver_truncate(conn, table_names) -> None:
     # Collect all FK constraints that need to be disabled upfront — including
@@ -173,7 +180,9 @@ def _sqlserver_truncate(conn, table_names) -> None:
 
     for table in table_names:
         for (fk,) in conn.execute(
-            text("SELECT name FROM sys.foreign_keys WHERE OBJECT_NAME(parent_object_id) = :t"),
+            text(
+                "SELECT name FROM sys.foreign_keys WHERE OBJECT_NAME(parent_object_id) = :t"
+            ),
             {"t": table},
         ).fetchall():
             key = (table, fk)
@@ -181,7 +190,7 @@ def _sqlserver_truncate(conn, table_names) -> None:
                 seen.add(key)
                 to_disable.append(key)
 
-        for (fk, parent) in conn.execute(
+        for fk, parent in conn.execute(
             text("""
                 SELECT fk.name, OBJECT_NAME(fk.parent_object_id)
                 FROM sys.foreign_keys fk
@@ -195,23 +204,26 @@ def _sqlserver_truncate(conn, table_names) -> None:
                 seen.add(key)
                 to_disable.append(key)
 
-    for (tbl, fk) in to_disable:
+    for tbl, fk in to_disable:
         conn.execute(text(f"ALTER TABLE [{tbl}] NOCHECK CONSTRAINT [{fk}]"))
 
     for table in table_names:
         conn.execute(text(f"DELETE FROM [{table}]"))
         has_identity = conn.execute(
-            text("SELECT COUNT(1) FROM sys.identity_columns WHERE OBJECT_NAME(object_id) = :t"),
+            text(
+                "SELECT COUNT(1) FROM sys.identity_columns WHERE OBJECT_NAME(object_id) = :t"
+            ),
             {"t": table},
         ).scalar()
         if has_identity:
             conn.execute(text(f"DBCC CHECKIDENT ('{table}', RESEED, 0)"))
 
-    for (tbl, fk) in to_disable:
+    for tbl, fk in to_disable:
         conn.execute(text(f"ALTER TABLE [{tbl}] WITH CHECK CHECK CONSTRAINT [{fk}]"))
 
 
 # ── Container launchers ────────────────────────────────────────────────────────
+
 
 def _start_postgres(config: BDDConfig, containers: list) -> str:
     from testcontainers.postgres import PostgresContainer
@@ -255,6 +267,7 @@ def _start_localstack(config: BDDConfig, containers: list) -> str:
 
 # ── Queue drain ────────────────────────────────────────────────────────────────
 
+
 def _drain_queue(sqs_client: Any, queue_url: str) -> None:
     while True:
         msgs = sqs_client.receive_message(
@@ -263,4 +276,6 @@ def _drain_queue(sqs_client: Any, queue_url: str) -> None:
         if not msgs:
             break
         for m in msgs:
-            sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=m["ReceiptHandle"])
+            sqs_client.delete_message(
+                QueueUrl=queue_url, ReceiptHandle=m["ReceiptHandle"]
+            )

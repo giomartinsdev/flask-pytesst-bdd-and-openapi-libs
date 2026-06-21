@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 _tests_dir = os.path.dirname(os.path.abspath(__file__))
 _src_dir = os.path.abspath(os.path.join(_tests_dir, "..", "src"))
@@ -11,22 +11,21 @@ for _p in (_src_dir, _pytest_bdd_utils, _openapi_flask_utils, _tests_dir):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from hr_steps import *  # noqa: F403
 import pytest
+
+import hr.api.areas.blueprint as area_bp_module
+import hr.api.employees.blueprint as emp_bp_module
+from hr.app import create_app
+from hr.application.area_service import AreaApplicationService
+from hr.application.employee_service import EmployeeApplicationService
+from hr.application.event_bus import EventBus
+from hr.db import Base
+from hr.domain.area.repository import AreaRepository
+from hr.domain.employee.repository import EmployeeRepository
+from lib.client import BDDClient
 from lib.config import BDDConfig
 from lib.infra import BDDInfra
-from lib.client import BDDClient
-
-from hr_steps import *  # noqa: F401,F403
-
-from hr.app import create_app
-from hr.db import Base
-from hr.application.employee_service import EmployeeApplicationService
-from hr.application.area_service import AreaApplicationService
-from hr.application.event_bus import EventBus
-from hr.domain.employee.repository import EmployeeRepository
-from hr.domain.area.repository import AreaRepository
-import hr.api.employees.blueprint as emp_bp_module
-import hr.api.areas.blueprint as area_bp_module
 
 _HR_QUEUE = "hr-events"
 _HR_TOPIC = "hr-alerts"

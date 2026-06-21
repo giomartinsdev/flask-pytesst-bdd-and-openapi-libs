@@ -1,9 +1,7 @@
-from dataclasses import dataclass, field
-from typing import Optional
+from pydantic import BaseModel
 
 
-@dataclass
-class CreateProductRequest:
+class CreateProductRequest(BaseModel):
     name: str
     category: str
     price: float
@@ -11,19 +9,16 @@ class CreateProductRequest:
     active: bool = True
 
 
-@dataclass
-class UpdateProductRequest:
-    name: Optional[str] = None
-    category: Optional[str] = None
-    price: Optional[float] = None
+class UpdateProductRequest(BaseModel):
+    name: str | None = None
+    category: str | None = None
+    price: float | None = None
 
 
-@dataclass
-class UpdateStockRequest:
-    stock: int = field(default=0)
+class UpdateStockRequest(BaseModel):
+    stock: int = 0
 
 
-@dataclass
-class ProductFilters:
-    category: Optional[str] = None
-    active: Optional[bool] = None
+class ProductFilters(BaseModel):
+    category: str | None = None
+    active: bool | None = None

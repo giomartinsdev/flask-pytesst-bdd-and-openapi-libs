@@ -1,9 +1,17 @@
-import enum
+from __future__ import annotations
 
-from sqlalchemy import Boolean, Column, Date, Enum, ForeignKey, Integer, Numeric, String
-from sqlalchemy.orm import relationship
+from datetime import date
+from decimal import Decimal
+from enum import StrEnum
+from typing import TYPE_CHECKING
+
+from sqlalchemy import Boolean, Date, Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from hr.db import Base
+
+if TYPE_CHECKING:
+    from hr.domain.area.model import Area
 
 ROLE_ORDER = ["JUNIOR", "MID", "SENIOR", "LEAD", "MANAGER", "DIRECTOR"]
 MIN_DAYS_IN_ROLE = 180
@@ -12,7 +20,7 @@ MAX_SALARY_INCREASE_PCT = 50.0
 MIN_MANAGER_ROLE = "LEAD"
 
 
-class Role(str, enum.Enum):
+class Role(StrEnum):
     JUNIOR = "JUNIOR"
     MID = "MID"
     SENIOR = "SENIOR"
@@ -24,27 +32,35 @@ class Role(str, enum.Enum):
 class Employee(Base):
     __tablename__ = "employees"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(255), nullable=False)
-    email = Column(String(255), nullable=False, unique=True, index=True)
-    role = Column(Enum(Role, native_enum=False, length=20), nullable=False)
-    salary = Column(Numeric(12, 2), nullable=False)
-    hire_date = Column(Date, nullable=False)
-    role_since = Column(Date, nullable=False)
-    active = Column(Boolean, nullable=False, default=True)
-    manager_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255))
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False, length=20))
+    salary: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    hire_date: Mapped[date] = mapped_column(Date)
+    role_since: Mapped[date] = mapped_column(Date)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    manager_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"))
     # use_alter avoids circular DDL: employees → areas → employees
-    area_id = Column(Integer, ForeignKey("areas.id", use_alter=True, name="fk_emp_area"), nullable=True)
+    area_id: Mapped[int | None] = mapped_column(
+        ForeignKey("areas.id", use_alter=True, name="fk_emp_area")
+    )
 
-    manager = relationship(
-        "Employee", foreign_keys=[manager_id],
-        back_populates="reports", remote_side="Employee.id",
+    manager: Mapped[Employee | None] = relationship(
+        "Employee",
+        foreign_keys="[Employee.manager_id]",
+        back_populates="reports",
+        remote_side="[Employee.id]",
     )
-    reports = relationship(
-        "Employee", foreign_keys="Employee.manager_id", back_populates="manager",
+    reports: Mapped[list[Employee]] = relationship(
+        "Employee",
+        foreign_keys="[Employee.manager_id]",
+        back_populates="manager",
     )
-    area = relationship(
-        "Area", foreign_keys="Employee.area_id", back_populates="members",
+    area: Mapped[Area | None] = relationship(
+        "Area",
+        foreign_keys="[Employee.area_id]",
+        back_populates="members",
     )
 
     def to_dict(self) -> dict:

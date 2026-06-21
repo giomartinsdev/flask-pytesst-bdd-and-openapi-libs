@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from sqlalchemy.orm import Session
 
 from hr.domain.employee.model import Employee, Role
@@ -14,17 +12,17 @@ class EmployeeRepository:
     def add(self, employee: Employee) -> None:
         self._db.add(employee)
 
-    def get(self, employee_id: int) -> Optional[Employee]:
+    def get(self, employee_id: int) -> Employee | None:
         return self._db.get(Employee, employee_id)
 
-    def get_by_email(self, email: str) -> Optional[Employee]:
+    def get_by_email(self, email: str) -> Employee | None:
         return self._db.query(Employee).filter(Employee.email == email).first()
 
     def list(
         self,
-        area_id: Optional[int] = None,
-        role: Optional[str] = None,
-        active: Optional[bool] = None,
+        area_id: int | None = None,
+        role: str | None = None,
+        active: bool | None = None,
     ) -> list[Employee]:
         q = self._db.query(Employee)
         if area_id is not None:
@@ -41,7 +39,7 @@ class EmployeeRepository:
     def count_active_reports(self, manager_id: int) -> int:
         return (
             self._db.query(Employee)
-            .filter(Employee.manager_id == manager_id, Employee.active == True)
+            .filter(Employee.manager_id == manager_id, Employee.active == True)  # noqa: E712
             .count()
         )
 

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from hr.application.employee_service import ConflictError, HRError, NotFoundError
+from hr.application.event_bus import EventBus
+from hr.domain.area.commands import (
+    AssignHeadCommand,
+    CreateAreaCommand,
+    DeleteAreaCommand,
+    UpdateAreaCommand,
+)
 from hr.domain.area.model import Area
 from hr.domain.area.repository import AreaRepository
-from hr.domain.area.commands import CreateAreaCommand, UpdateAreaCommand, AssignHeadCommand, DeleteAreaCommand
+from hr.domain.employee.model import MIN_MANAGER_ROLE, ROLE_ORDER
 from hr.domain.employee.repository import EmployeeRepository
-from hr.domain.employee.model import ROLE_ORDER, MIN_MANAGER_ROLE
-from hr.domain.events import AreaCreated, AreaUpdated, AreaHeadAssigned, AreaDeleted
-from hr.application.event_bus import EventBus
-from hr.application.employee_service import HRError, NotFoundError, ConflictError
+from hr.domain.events import AreaCreated, AreaDeleted, AreaHeadAssigned, AreaUpdated
 
 
 class AreaApplicationService:
@@ -65,7 +70,9 @@ class AreaApplicationService:
         area.head_employee_id = cmd.head_employee_id
         self._areas.commit()
         self._areas.refresh(area)
-        self._bus.publish(AreaHeadAssigned(area_id=area.id, head_employee_id=cmd.head_employee_id))
+        self._bus.publish(
+            AreaHeadAssigned(area_id=area.id, head_employee_id=cmd.head_employee_id)
+        )
         return area
 
     def get_members(self, area_id: int) -> list:

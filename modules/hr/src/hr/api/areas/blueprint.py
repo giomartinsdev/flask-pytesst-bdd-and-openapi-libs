@@ -1,19 +1,24 @@
 import os
-from flask import Blueprint, current_app, jsonify, request
+
 import boto3
+from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy.orm import Session
 
-from lib.openapi import schema
-
-from hr.domain.area.model import Area
-from hr.domain.employee.model import Employee
-from hr.domain.area.repository import AreaRepository
-from hr.domain.employee.repository import EmployeeRepository
-from hr.domain.area.commands import CreateAreaCommand, UpdateAreaCommand, AssignHeadCommand, DeleteAreaCommand
+from hr.api.areas.schemas import AssignHeadRequest, CreateAreaRequest, UpdateAreaRequest
 from hr.application.area_service import AreaApplicationService
 from hr.application.employee_service import HRError
 from hr.application.event_bus import EventBus
-from hr.api.areas.schemas import CreateAreaRequest, UpdateAreaRequest, AssignHeadRequest
+from hr.domain.area.commands import (
+    AssignHeadCommand,
+    CreateAreaCommand,
+    DeleteAreaCommand,
+    UpdateAreaCommand,
+)
+from hr.domain.area.model import Area
+from hr.domain.area.repository import AreaRepository
+from hr.domain.employee.model import Employee
+from hr.domain.employee.repository import EmployeeRepository
+from lib.openapi import schema
 
 areas_bp = Blueprint("areas", __name__, url_prefix="/areas")
 
@@ -46,7 +51,9 @@ def create_area():
         return _err("missing field: name", 400)
     svc = _make_service()
     try:
-        area = svc.create(CreateAreaCommand(name=data["name"], description=data.get("description")))
+        area = svc.create(
+            CreateAreaCommand(name=data["name"], description=data.get("description"))
+        )
     except HRError as e:
         return _err(str(e), e.status)
     return jsonify(area.to_dict()), 201
@@ -75,9 +82,13 @@ def update_area(area_id: int):
     data = request.get_json(silent=True) or {}
     svc = _make_service()
     try:
-        area = svc.update(UpdateAreaCommand(
-            area_id=area_id, name=data.get("name"), description=data.get("description"),
-        ))
+        area = svc.update(
+            UpdateAreaCommand(
+                area_id=area_id,
+                name=data.get("name"),
+                description=data.get("description"),
+            )
+        )
     except HRError as e:
         return _err(str(e), e.status)
     return jsonify(area.to_dict())
@@ -91,9 +102,12 @@ def assign_head(area_id: int):
         return _err("missing field: head_employee_id", 400)
     svc = _make_service()
     try:
-        area = svc.assign_head(AssignHeadCommand(
-            area_id=area_id, head_employee_id=data["head_employee_id"],
-        ))
+        area = svc.assign_head(
+            AssignHeadCommand(
+                area_id=area_id,
+                head_employee_id=data["head_employee_id"],
+            )
+        )
     except HRError as e:
         return _err(str(e), e.status)
     return jsonify(area.to_dict())

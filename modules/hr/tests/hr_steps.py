@@ -1,10 +1,10 @@
-import json
 from datetime import date, timedelta
+import json
 
 import pytest
-from pytest_bdd import given, when, then, parsers
+from pytest_bdd import given, parsers, then, when
 
-from lib.assertions import assert_status, assert_error_contains, assert_sqs_message
+from lib.assertions import assert_error_contains, assert_sqs_message, assert_status
 
 
 @pytest.fixture
@@ -14,19 +14,25 @@ def hr_context():
 
 # ── Given ─────────────────────────────────────────────────────────────────────
 
+
 @given("the company has no employees")
 def company_empty():
     pass
 
 
-@given(parsers.parse('the areas "{area1}" and "{area2}" are seeded directly in the database'))
+@given(
+    parsers.parse(
+        'the areas "{area1}" and "{area2}" are seeded directly in the database'
+    )
+)
 def seed_two_areas_in_db(hr_db_seed, hr_context, area1, area2):
     from hr.domain.area.model import Area
+
     a1 = Area(name=area1)
     a2 = Area(name=area2)
     hr_db_seed.add(a1)
     hr_db_seed.add(a2)
-    hr_db_seed.flush()   # assign DB-generated IDs without committing
+    hr_db_seed.flush()  # assign DB-generated IDs without committing
     hr_context["areas"] = {
         area1: {"id": a1.id, "name": area1},
         area2: {"id": a2.id, "name": area2},
@@ -47,9 +53,15 @@ def area_exists(hr_bdd_client, hr_context, name):
     )
 )
 def employee_exists(hr_bdd_client, hr_context, name, email, role, salary):
-    resp = hr_bdd_client.json_post("/employees", {
-        "name": name, "email": email, "role": role, "salary": salary,
-    })
+    resp = hr_bdd_client.json_post(
+        "/employees",
+        {
+            "name": name,
+            "email": email,
+            "role": role,
+            "salary": salary,
+        },
+    )
     assert resp.status_code == 201, f"setup failed: {resp.data}"
     hr_context.setdefault("employees", {})[email] = json.loads(resp.data)
 
@@ -59,13 +71,21 @@ def employee_exists(hr_bdd_client, hr_context, name, email, role, salary):
         'an employee exists with name "{name}" email "{email}" role "{role}" salary {salary:g} in area "{area_name}"'
     )
 )
-def employee_exists_in_area(hr_bdd_client, hr_context, name, email, role, salary, area_name):
+def employee_exists_in_area(
+    hr_bdd_client, hr_context, name, email, role, salary, area_name
+):
     area = hr_context.get("areas", {}).get(area_name)
     assert area is not None, f"area {area_name!r} must be created before this step"
-    resp = hr_bdd_client.json_post("/employees", {
-        "name": name, "email": email, "role": role, "salary": salary,
-        "area_id": area["id"],
-    })
+    resp = hr_bdd_client.json_post(
+        "/employees",
+        {
+            "name": name,
+            "email": email,
+            "role": role,
+            "salary": salary,
+            "area_id": area["id"],
+        },
+    )
     assert resp.status_code == 201, f"setup failed: {resp.data}"
     hr_context.setdefault("employees", {})[email] = json.loads(resp.data)
 
@@ -76,9 +96,15 @@ def employee_exists_in_area(hr_bdd_client, hr_context, name, email, role, salary
     )
 )
 def inactive_employee_exists(hr_bdd_client, hr_context, name, email, role, salary):
-    resp = hr_bdd_client.json_post("/employees", {
-        "name": name, "email": email, "role": role, "salary": salary,
-    })
+    resp = hr_bdd_client.json_post(
+        "/employees",
+        {
+            "name": name,
+            "email": email,
+            "role": role,
+            "salary": salary,
+        },
+    )
     assert resp.status_code == 201, f"setup failed: {resp.data}"
     emp = json.loads(resp.data)
     hr_context.setdefault("employees", {})[email] = emp
@@ -92,12 +118,21 @@ def inactive_employee_exists(hr_bdd_client, hr_context, name, email, role, salar
         'an employee with name "{name}" email "{email}" role "{role}" salary {salary:g} in role for {days:d} days'
     )
 )
-def employee_with_role_since(hr_bdd_client, hr_context, name, email, role, salary, days):
+def employee_with_role_since(
+    hr_bdd_client, hr_context, name, email, role, salary, days
+):
     role_since = (date.today() - timedelta(days=days)).isoformat()
-    resp = hr_bdd_client.json_post("/employees", {
-        "name": name, "email": email, "role": role, "salary": salary,
-        "hire_date": role_since, "role_since": role_since,
-    })
+    resp = hr_bdd_client.json_post(
+        "/employees",
+        {
+            "name": name,
+            "email": email,
+            "role": role,
+            "salary": salary,
+            "hire_date": role_since,
+            "role_since": role_since,
+        },
+    )
     assert resp.status_code == 201, f"setup failed: {resp.data}"
     hr_context.setdefault("employees", {})[email] = json.loads(resp.data)
 
@@ -106,12 +141,15 @@ def employee_with_role_since(hr_bdd_client, hr_context, name, email, role, salar
 def assign_reports_to(hr_bdd_client, hr_context, reporter_email, manager_email):
     reporter = hr_context["employees"][reporter_email]
     manager = hr_context["employees"][manager_email]
-    resp = hr_bdd_client.json_post(f"/employees/{reporter['id']}/manager", {"manager_id": manager["id"]})
+    resp = hr_bdd_client.json_post(
+        f"/employees/{reporter['id']}/manager", {"manager_id": manager["id"]}
+    )
     assert resp.status_code == 200, f"assign manager failed: {resp.data}"
     hr_context["employees"][reporter_email] = json.loads(resp.data)
 
 
 # ── When — employees ──────────────────────────────────────────────────────────
+
 
 @when(
     parsers.parse(
@@ -119,11 +157,19 @@ def assign_reports_to(hr_bdd_client, hr_context, reporter_email, manager_email):
     )
 )
 def hire_employee(hr_bdd_client, hr_context, name, email, role, salary):
-    hr_context["response"] = hr_bdd_client.json_post("/employees", {
-        "name": name, "email": email, "role": role, "salary": salary,
-    })
+    hr_context["response"] = hr_bdd_client.json_post(
+        "/employees",
+        {
+            "name": name,
+            "email": email,
+            "role": role,
+            "salary": salary,
+        },
+    )
     if hr_context["response"].status_code == 201:
-        hr_context.setdefault("employees", {})[email] = json.loads(hr_context["response"].data)
+        hr_context.setdefault("employees", {})[email] = json.loads(
+            hr_context["response"].data
+        )
 
 
 @when("I list all employees")
@@ -163,7 +209,9 @@ def do_assign_manager(hr_bdd_client, hr_context, manager_email, emp_email):
 @when(parsers.parse('I toggle the status of employee "{email}"'))
 def toggle_status(hr_bdd_client, hr_context, email):
     emp = hr_context["employees"][email]
-    hr_context["response"] = hr_bdd_client.json_patch(f"/employees/{emp['id']}/status", {})
+    hr_context["response"] = hr_bdd_client.json_patch(
+        f"/employees/{emp['id']}/status", {}
+    )
 
 
 @when(parsers.parse('I assign employee "{email}" to area "{area_name}"'))
@@ -180,11 +228,14 @@ def assign_employee_to_area(hr_bdd_client, hr_context, email, area_name):
 
 # ── When — areas ──────────────────────────────────────────────────────────────
 
+
 @when(parsers.parse('I create an area with name "{name}"'))
 def create_area(hr_bdd_client, hr_context, name):
     hr_context["response"] = hr_bdd_client.json_post("/areas", {"name": name})
     if hr_context["response"].status_code == 201:
-        hr_context.setdefault("areas", {})[name] = json.loads(hr_context["response"].data)
+        hr_context.setdefault("areas", {})[name] = json.loads(
+            hr_context["response"].data
+        )
 
 
 @when("I create an area without a name")
@@ -208,9 +259,13 @@ def get_area_by_name(hr_bdd_client, hr_context, name):
 def update_area(hr_bdd_client, hr_context, name, new_name):
     area = hr_context.get("areas", {}).get(name)
     assert area is not None
-    hr_context["response"] = hr_bdd_client.json_put(f"/areas/{area['id']}", {"name": new_name})
+    hr_context["response"] = hr_bdd_client.json_put(
+        f"/areas/{area['id']}", {"name": new_name}
+    )
     if hr_context["response"].status_code == 200:
-        hr_context.setdefault("areas", {})[new_name] = json.loads(hr_context["response"].data)
+        hr_context.setdefault("areas", {})[new_name] = json.loads(
+            hr_context["response"].data
+        )
 
 
 @when(parsers.parse('I assign "{email}" as head of area "{area_name}"'))
@@ -241,6 +296,7 @@ def get_area_employees(hr_bdd_client, hr_context, area_name):
 
 # ── Then ──────────────────────────────────────────────────────────────────────
 
+
 @then(parsers.parse("the response status is {status:d}"))
 def check_hr_status(hr_context, status):
     assert_status(hr_context["response"], status)
@@ -261,13 +317,17 @@ def check_employee_role(hr_context, role):
 @then("the employee is active")
 def check_employee_active(hr_context):
     body = json.loads(hr_context["response"].data)
-    assert body.get("active") is True, f"expected active=True, got {body.get('active')!r}"
+    assert body.get("active") is True, (
+        f"expected active=True, got {body.get('active')!r}"
+    )
 
 
 @then("the employee is inactive")
 def check_employee_inactive(hr_context):
     body = json.loads(hr_context["response"].data)
-    assert body.get("active") is False, f"expected active=False, got {body.get('active')!r}"
+    assert body.get("active") is False, (
+        f"expected active=False, got {body.get('active')!r}"
+    )
 
 
 @then(parsers.parse('the error contains "{fragment}"'))
@@ -288,12 +348,16 @@ def check_first_employee_name(hr_context, name):
     assert body[0]["name"] == name, f"expected {name!r}, got {body[0]['name']!r}"
 
 
-@then(parsers.parse('the employee salary increased by {pct:g} percent from {original:g}'))
+@then(
+    parsers.parse("the employee salary increased by {pct:g} percent from {original:g}")
+)
 def check_salary_increase(hr_context, pct, original):
     body = json.loads(hr_context["response"].data)
     expected = original * (1 + pct / 100)
     actual = body.get("salary")
-    assert abs(actual - expected) < 0.01, f"expected salary ~{expected:.2f}, got {actual}"
+    assert abs(actual - expected) < 0.01, (
+        f"expected salary ~{expected:.2f}, got {actual}"
+    )
 
 
 @then(parsers.parse('the employee manager is "{manager_email}"'))

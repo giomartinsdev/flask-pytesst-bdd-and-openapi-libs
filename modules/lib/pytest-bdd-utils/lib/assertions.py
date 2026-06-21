@@ -1,8 +1,8 @@
 import json
 import time
 
-
 # ── HTTP response assertions ───────────────────────────────────────────────────
+
 
 def assert_status(response, expected: int) -> None:
     assert response.status_code == expected, (
@@ -42,6 +42,7 @@ def assert_error_contains(response, fragment: str) -> None:
 
 
 # ── SQS assertions ─────────────────────────────────────────────────────────────
+
 
 def assert_sqs_message(
     sqs_client,
@@ -109,6 +110,7 @@ def assert_no_sqs_message(
 
 # ── SNS assertions ─────────────────────────────────────────────────────────────
 
+
 def assert_sns_message(
     sqs_client,
     capture_url: str,
@@ -173,19 +175,20 @@ def assert_no_sns_message(
 
 # ── S3 assertions ──────────────────────────────────────────────────────────────
 
+
 def assert_s3_object_exists(s3_client, bucket: str, key: str) -> None:
     try:
         s3_client.head_object(Bucket=bucket, Key=key)
-    except Exception:
-        raise AssertionError(f"S3 object s3://{bucket}/{key} does not exist")
+    except Exception as exc:
+        raise AssertionError(f"S3 object s3://{bucket}/{key} does not exist") from exc
 
 
 def assert_s3_object_contains(s3_client, bucket: str, key: str, fragment: str) -> None:
     """Assert that the content of s3://*bucket*/*key* contains *fragment*."""
     try:
         content = s3_client.get_object(Bucket=bucket, Key=key)["Body"].read().decode()
-    except Exception:
-        raise AssertionError(f"S3 object s3://{bucket}/{key} does not exist")
+    except Exception as exc:
+        raise AssertionError(f"S3 object s3://{bucket}/{key} does not exist") from exc
     assert fragment in content, (
         f"expected s3://{bucket}/{key} to contain {fragment!r}\ngot: {content[:300]}"
     )

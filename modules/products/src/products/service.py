@@ -1,5 +1,5 @@
+from decimal import Decimal
 import json
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -14,8 +14,16 @@ class ProductError(Exception):
 
 
 class ProductService:
-    def __init__(self, session: Session, sqs_client=None, sns_client=None, s3_client=None,
-                 sqs_queue_url: str = "", sns_topic_arn: str = "", s3_bucket: str = ""):
+    def __init__(
+        self,
+        session: Session,
+        sqs_client=None,
+        sns_client=None,
+        s3_client=None,
+        sqs_queue_url: str = "",
+        sns_topic_arn: str = "",
+        s3_bucket: str = "",
+    ):
         self._session = session
         self._sqs = sqs_client
         self._sns = sns_client
@@ -30,8 +38,13 @@ class ProductService:
         if req.stock < 0:
             raise ProductError("stock cannot be negative")
         self._assert_unique_name(req.name, req.category)
-        product = Product(name=req.name, category=req.category,
-                          price=req.price, stock=req.stock, active=req.active)
+        product = Product(
+            name=req.name,
+            category=req.category,
+            price=req.price,
+            stock=req.stock,
+            active=req.active,
+        )
         self._session.add(product)
         self._session.commit()
         self._session.refresh(product)
@@ -65,7 +78,7 @@ class ProductService:
         if req.category is not None:
             product.category = req.category
         if req.price is not None:
-            product.price = req.price
+            product.price = Decimal(str(req.price))
         self._session.commit()
         self._session.refresh(product)
         return product
@@ -96,19 +109,32 @@ class ProductService:
         self._session.commit()
         self._publish_event("product.deleted", product)
 
-    def upload_asset(self, product_id: int, key: str, data: bytes,
-                     content_type: str = "application/octet-stream") -> str:
+    def upload_asset(
+        self,
+        product_id: int,
+        key: str,
+        data: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> str:
         self.get(product_id)
         if self._s3 and self._bucket:
-            self._s3.put_object(Bucket=self._bucket, Key=key, Body=data, ContentType=content_type)
+            self._s3.put_object(
+                Bucket=self._bucket, Key=key, Body=data, ContentType=content_type
+            )
         return key
 
-    def _assert_unique_name(self, name: str, category: str, exclude_id: Optional[int] = None) -> None:
-        q = self._session.query(Product).filter(Product.name == name, Product.category == category)
+    def _assert_unique_name(
+        self, name: str, category: str, exclude_id: int | None = None
+    ) -> None:
+        q = self._session.query(Product).filter(
+            Product.name == name, Product.category == category
+        )
         if exclude_id is not None:
             q = q.filter(Product.id != exclude_id)
         if q.first() is not None:
-            raise ProductError(f"product '{name}' already exists in category '{category}'")
+            raise ProductError(
+                f"product '{name}' already exists in category '{category}'"
+            )
 
     def _publish_event(self, event_type: str, product: Product) -> None:
         if self._sqs and self._queue_url:

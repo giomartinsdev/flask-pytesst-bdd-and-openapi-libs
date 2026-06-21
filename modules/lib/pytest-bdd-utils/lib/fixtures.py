@@ -1,21 +1,22 @@
-from typing import Dict, List
+from collections.abc import Generator
 
 import pytest
 
 from lib.client import BDDClient
 from lib.infra import BDDInfra
 
-
 # ── Infrastructure (session-scoped — containers start once per test session) ──
 
+
 @pytest.fixture(scope="session")
-def bdd_infra(bdd_config) -> BDDInfra:
+def bdd_infra(bdd_config) -> Generator[BDDInfra, None, None]:
     infra = BDDInfra.from_config(bdd_config)
     yield infra
     infra.stop()
 
 
 # ── AWS client shortcuts ───────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="session")
 def sqs_client(bdd_infra):
@@ -53,8 +54,9 @@ def sns_capture_url(bdd_infra):
 
 # ── Per-test reset (autouse) ───────────────────────────────────────────────────
 
+
 @pytest.fixture
-def db_tables() -> List[str]:
+def db_tables() -> list[str]:
     """Override in a module conftest to list the tables to truncate before each test."""
     return []
 
@@ -69,6 +71,7 @@ def reset_between_tests(bdd_infra, db_tables):
 
 
 # ── DB seeding ────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def db_seed(bdd_infra):
@@ -89,8 +92,9 @@ def db_seed(bdd_infra):
 
 # ── Step state ─────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
-def scenario_context() -> Dict:
+def scenario_context() -> dict:
     """Fresh dict per test scenario for accumulating state across BDD steps.
 
     Use this instead of defining a module-specific ``<name>_context`` fixture.
@@ -105,7 +109,8 @@ def scenario_context() -> Dict:
 
 # ── HTTP client ────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
-def bdd_client(flask_app) -> BDDClient:
+def bdd_client(flask_app) -> Generator[BDDClient, None, None]:
     with flask_app.test_client() as raw:
         yield BDDClient(raw)

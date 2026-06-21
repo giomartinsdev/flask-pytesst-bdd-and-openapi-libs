@@ -1,12 +1,18 @@
 import os
-from flask import Blueprint, current_app, jsonify, request
+
 import boto3
+from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy.orm import Session
 
 from lib.openapi import schema
 
 from .models import Product
-from .schemas import CreateProductRequest, ProductFilters, UpdateProductRequest, UpdateStockRequest
+from .schemas import (
+    CreateProductRequest,
+    ProductFilters,
+    UpdateProductRequest,
+    UpdateStockRequest,
+)
 from .service import ProductError, ProductService
 
 products_bp = Blueprint("products", __name__, url_prefix="/products")
@@ -39,10 +45,15 @@ def create_product():
         return _error(f"missing fields: {', '.join(missing)}", 400)
     svc = _make_service()
     try:
-        product = svc.create(CreateProductRequest(
-            name=data["name"], category=data["category"], price=data["price"],
-            stock=data.get("stock", 0), active=data.get("active", True),
-        ))
+        product = svc.create(
+            CreateProductRequest(
+                name=data["name"],
+                category=data["category"],
+                price=data["price"],
+                stock=data.get("stock", 0),
+                active=data.get("active", True),
+            )
+        )
     except ProductError as e:
         return _error(str(e), e.status)
     return jsonify(product.to_dict()), 201
@@ -54,7 +65,9 @@ def list_products():
     active_param = request.args.get("active")
     active = None if active_param is None else active_param.lower() == "true"
     svc = _make_service()
-    products = svc.list_all(ProductFilters(category=request.args.get("category"), active=active))
+    products = svc.list_all(
+        ProductFilters(category=request.args.get("category"), active=active)
+    )
     return jsonify([p.to_dict() for p in products])
 
 
@@ -74,9 +87,14 @@ def update_product(product_id: int):
     data = request.get_json(silent=True) or {}
     svc = _make_service()
     try:
-        product = svc.update(product_id, UpdateProductRequest(
-            name=data.get("name"), category=data.get("category"), price=data.get("price"),
-        ))
+        product = svc.update(
+            product_id,
+            UpdateProductRequest(
+                name=data.get("name"),
+                category=data.get("category"),
+                price=data.get("price"),
+            ),
+        )
     except ProductError as e:
         return _error(str(e), e.status)
     return jsonify(product.to_dict())

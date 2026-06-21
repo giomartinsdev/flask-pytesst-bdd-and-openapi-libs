@@ -1,12 +1,13 @@
 import json
+
 import pytest
-from pytest_bdd import given, when, then, parsers
+from pytest_bdd import given, parsers, then, when
 
 from lib.assertions import (
-    assert_status,
-    assert_field,
     assert_error_contains,
+    assert_field,
     assert_sqs_message,
+    assert_status,
 )
 
 
@@ -16,6 +17,7 @@ def context():
 
 
 # ── Given ─────────────────────────────────────────────────────────────────────
+
 
 @given("the product catalog is empty")
 def catalog_is_empty():
@@ -28,11 +30,19 @@ def catalog_is_empty():
     )
 )
 def product_exists(products_bdd_client, context, name, category, price, stock):
-    resp = products_bdd_client.json_post("/products", {
-        "name": name, "category": category, "price": price, "stock": stock,
-    })
+    resp = products_bdd_client.json_post(
+        "/products",
+        {
+            "name": name,
+            "category": category,
+            "price": price,
+            "stock": stock,
+        },
+    )
     assert resp.status_code == 201, f"setup failed: {resp.data}"
-    context.setdefault("created_ids", {})[f"{name}:{category}"] = json.loads(resp.data)["id"]
+    context.setdefault("created_ids", {})[f"{name}:{category}"] = json.loads(resp.data)[
+        "id"
+    ]
 
 
 @given(parsers.parse('the product "{name}" in category "{category}" is deactivated'))
@@ -44,15 +54,22 @@ def product_deactivated(products_bdd_client, context, name, category):
 
 # ── When ──────────────────────────────────────────────────────────────────────
 
+
 @when(
     parsers.parse(
         'I create a product with name "{name}", category "{category}", price {price:f} and stock {stock:d}'
     )
 )
 def create_product(products_bdd_client, context, name, category, price, stock):
-    context["response"] = products_bdd_client.json_post("/products", {
-        "name": name, "category": category, "price": price, "stock": stock,
-    })
+    context["response"] = products_bdd_client.json_post(
+        "/products",
+        {
+            "name": name,
+            "category": category,
+            "price": price,
+            "stock": stock,
+        },
+    )
 
 
 @when("I create a product with missing fields")
@@ -75,16 +92,28 @@ def list_by_active(products_bdd_client, context, active):
     context["response"] = products_bdd_client.get(f"/products?active={active}")
 
 
-@when(parsers.parse('I update product "{name}" in category "{category}" with price {price:f}'))
+@when(
+    parsers.parse(
+        'I update product "{name}" in category "{category}" with price {price:f}'
+    )
+)
 def update_price(products_bdd_client, context, name, category, price):
     product_id = context["created_ids"][f"{name}:{category}"]
-    context["response"] = products_bdd_client.json_put(f"/products/{product_id}", {"price": price})
+    context["response"] = products_bdd_client.json_put(
+        f"/products/{product_id}", {"price": price}
+    )
 
 
-@when(parsers.parse('I set stock of product "{name}" in category "{category}" to {stock:d}'))
+@when(
+    parsers.parse(
+        'I set stock of product "{name}" in category "{category}" to {stock:d}'
+    )
+)
 def update_stock(products_bdd_client, context, name, category, stock):
     product_id = context["created_ids"][f"{name}:{category}"]
-    context["response"] = products_bdd_client.json_patch(f"/products/{product_id}/stock", {"stock": stock})
+    context["response"] = products_bdd_client.json_patch(
+        f"/products/{product_id}/stock", {"stock": stock}
+    )
 
 
 @when(parsers.parse('I delete product "{name}" in category "{category}"'))
@@ -94,6 +123,7 @@ def delete_product(products_bdd_client, context, name, category):
 
 
 # ── Then ──────────────────────────────────────────────────────────────────────
+
 
 @then(parsers.parse("the response status is {status:d}"))
 def check_status(context, status):

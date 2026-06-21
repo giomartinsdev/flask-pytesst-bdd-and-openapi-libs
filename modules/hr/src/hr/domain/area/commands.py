@@ -1,26 +1,21 @@
-from dataclasses import dataclass
-from typing import Optional
+from pydantic import BaseModel
 
 
-@dataclass
-class CreateAreaCommand:
+class CreateAreaCommand(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
-@dataclass
-class UpdateAreaCommand:
+class UpdateAreaCommand(BaseModel):
     area_id: int
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
 
 
-@dataclass
-class AssignHeadCommand:
+class AssignHeadCommand(BaseModel):
     area_id: int
     head_employee_id: int
 
 
-@dataclass
-class DeleteAreaCommand:
+class DeleteAreaCommand(BaseModel):
     area_id: int

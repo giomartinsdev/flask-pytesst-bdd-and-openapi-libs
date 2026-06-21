@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 _tests_dir = os.path.dirname(os.path.abspath(__file__))
 _src_dir = os.path.abspath(os.path.join(_tests_dir, "..", "src"))
@@ -11,20 +11,19 @@ for _p in (_src_dir, _pytest_bdd_utils, _openapi_flask_utils, _tests_dir):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from product_steps import *  # noqa: F403
 import pytest
+
+from lib.client import BDDClient
 from lib.config import BDDConfig
 from lib.infra import BDDInfra
-from lib.client import BDDClient
-
-from product_steps import *  # noqa: F401,F403
-
 from products.app import create_app
+import products.blueprint as bp_module
 from products.db import Base
 from products.service import ProductService
-import products.blueprint as bp_module
 
-_QUEUE  = "products-events"
-_TOPIC  = "products-alerts"
+_QUEUE = "products-events"
+_TOPIC = "products-alerts"
 _BUCKET = "products-assets"
 
 

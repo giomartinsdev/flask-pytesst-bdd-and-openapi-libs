@@ -1,4 +1,3 @@
-import dataclasses
 import json
 
 from hr.domain.events import DomainEvent
@@ -21,9 +20,11 @@ class EventBus:
         if self._sqs and self._queue_url:
             self._sqs.send_message(
                 QueueUrl=self._queue_url,
-                MessageBody=json.dumps(dataclasses.asdict(event)),
+                MessageBody=json.dumps(event.model_dump()),
             )
 
     def notify(self, subject: str, message: str) -> None:
         if self._sns and self._topic_arn:
-            self._sns.publish(TopicArn=self._topic_arn, Subject=subject, Message=message)
+            self._sns.publish(
+                TopicArn=self._topic_arn, Subject=subject, Message=message
+            )

@@ -1,19 +1,15 @@
-from dataclasses import dataclass
-from typing import Optional
+from pydantic import BaseModel
 
 
-@dataclass
-class CreateAreaRequest:
+class CreateAreaRequest(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
-@dataclass
-class UpdateAreaRequest:
-    name: Optional[str] = None
-    description: Optional[str] = None
+class UpdateAreaRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
 
 
-@dataclass
-class AssignHeadRequest:
+class AssignHeadRequest(BaseModel):
     head_employee_id: int

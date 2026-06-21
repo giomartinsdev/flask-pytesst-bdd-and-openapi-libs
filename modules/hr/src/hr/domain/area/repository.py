@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from sqlalchemy.orm import Session
 
 from hr.domain.area.model import Area
@@ -14,10 +12,10 @@ class AreaRepository:
     def add(self, area: Area) -> None:
         self._db.add(area)
 
-    def get(self, area_id: int) -> Optional[Area]:
+    def get(self, area_id: int) -> Area | None:
         return self._db.get(Area, area_id)
 
-    def get_by_name(self, name: str) -> Optional[Area]:
+    def get_by_name(self, name: str) -> Area | None:
         return self._db.query(Area).filter(Area.name == name).first()
 
     def list(self) -> list[Area]:
@@ -25,6 +23,7 @@ class AreaRepository:
 
     def has_members(self, area_id: int) -> bool:
         from hr.domain.employee.model import Employee
+
         return self._db.query(Employee).filter(Employee.area_id == area_id).count() > 0
 
     def delete(self, area: Area) -> None:

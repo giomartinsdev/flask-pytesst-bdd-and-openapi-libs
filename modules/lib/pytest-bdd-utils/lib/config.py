@@ -1,6 +1,7 @@
 import os
-from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Images:
@@ -9,16 +10,17 @@ class Images:
     SQLSERVER = "flask-bdd-mssql:latest"
 
 
-@dataclass
-class BDDConfig:
-    db_type: str = "postgres"          # "postgres" | "sqlserver"
-    sqs_queues: List[str] = field(default_factory=list)
-    sns_topics: List[str] = field(default_factory=list)
-    s3_buckets: List[str] = field(default_factory=list)
+class BDDConfig(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    db_type: str = "postgres"
+    sqs_queues: list[str] = Field(default_factory=list)
+    sns_topics: list[str] = Field(default_factory=list)
+    s3_buckets: list[str] = Field(default_factory=list)
     aws_region: str = "us-east-1"
-    db_base: Optional[Any] = None
-    db_url: Optional[str] = None
-    aws_endpoint: Optional[str] = None
+    db_base: Any | None = None
+    db_url: str | None = None
+    aws_endpoint: str | None = None
     postgres_image: str = Images.POSTGRES
     sqlserver_image: str = Images.SQLSERVER
     localstack_image: str = Images.LOCALSTACK
@@ -28,9 +30,9 @@ class BDDConfig:
         cls,
         db_base: Any = None,
         db_type: str = "postgres",
-        sqs_queues: List[str] = None,
-        sns_topics: List[str] = None,
-        s3_buckets: List[str] = None,
+        sqs_queues: list[str] | None = None,
+        sns_topics: list[str] | None = None,
+        s3_buckets: list[str] | None = None,
     ) -> "BDDConfig":
         """Always starts fresh containers on random host ports.
 
@@ -55,9 +57,9 @@ class BDDConfig:
         cls,
         db_base: Any = None,
         db_type: str = "postgres",
-        sqs_queues: List[str] = None,
-        sns_topics: List[str] = None,
-        s3_buckets: List[str] = None,
+        sqs_queues: list[str] | None = None,
+        sns_topics: list[str] | None = None,
+        s3_buckets: list[str] | None = None,
     ) -> "BDDConfig":
         """Reads DATABASE_URL and AWS_ENDPOINT_URL from the environment.
 

@@ -1,4 +1,7 @@
-from sqlalchemy import Boolean, Column, Integer, Numeric, String
+from decimal import Decimal
+
+from sqlalchemy import Boolean, Integer, Numeric, String
+from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
 
@@ -6,12 +9,12 @@ from .db import Base
 class Product(Base):
     __tablename__ = "products"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(255), nullable=False)
-    category = Column(String(100), nullable=False)
-    price = Column(Numeric(10, 2), nullable=False)
-    stock = Column(Integer, nullable=False, default=0)
-    active = Column(Boolean, nullable=False, default=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255))
+    category: Mapped[str] = mapped_column(String(100))
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    stock: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     def to_dict(self) -> dict:
         return {
