@@ -226,6 +226,18 @@ def _resolve_schema(cls, defs: dict) -> dict:
     return {"$ref": f"#/components/schemas/{name}"}
 
 
+def _endpoint_tag(rule_endpoint: str) -> str:
+    """Derive an OpenAPI tag from a Flask endpoint name.
+
+    'products.create_product' → 'products'
+    'hr.hire'                 → 'hr'
+    'index'                   → 'general'
+    """
+    if "." in rule_endpoint:
+        return rule_endpoint.split(".")[0]
+    return "general"
+
+
 def _operation(rule_endpoint: str, method: str, path_params: list[dict], func, defs: dict) -> dict:
     import typing
     from typing import Union, get_args, get_origin
@@ -238,6 +250,7 @@ def _operation(rule_endpoint: str, method: str, path_params: list[dict], func, d
 
     op: dict = {
         "operationId": f"{method.lower()}_{rule_endpoint}",
+        "tags": [_endpoint_tag(rule_endpoint)],
         "responses": {},
     }
 
@@ -314,6 +327,7 @@ def build_spec(
     """
     _internal_routes = {"/openapi.json", "/docs"}
     defs: dict = {}
+    seen_tags: list[str] = []
     spec: dict = {
         "openapi": "3.0.3",
         "info": {"title": title, "version": version},
@@ -331,10 +345,20 @@ def build_spec(
         spec["paths"].setdefault(path, {})
         func = app.view_functions.get(rule.endpoint)
 
+        tag = _endpoint_tag(rule.endpoint)
+        if tag not in seen_tags:
+            seen_tags.append(tag)
+
         for method in methods:
             spec["paths"][path][method.lower()] = _operation(
                 rule.endpoint, method, path_params, func, defs
             )
+
+    if seen_tags:
+        spec["tags"] = [
+            {"name": t, "description": f"{t.replace('_', ' ').title()} endpoints"}
+            for t in seen_tags
+        ]
 
     components: dict = {}
     if defs:
