@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from hr.domain.area.model import Area
 from hr.domain.area.repository import AreaRepository
 from hr.domain.area.commands import CreateAreaCommand, UpdateAreaCommand, AssignHeadCommand, DeleteAreaCommand
