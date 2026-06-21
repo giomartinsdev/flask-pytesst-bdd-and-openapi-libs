@@ -1,9 +1,6 @@
 from sqlalchemy import Boolean, Column, Integer, Numeric, String
-from sqlalchemy.orm import DeclarativeBase
 
-
-class Base(DeclarativeBase):
-    pass
+from .db import Base
 
 
 class Product(Base):

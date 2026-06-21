@@ -1,15 +1,10 @@
 import json
 from typing import Optional
 
-import boto3
 from sqlalchemy.orm import Session
 
-from modules.products.models import Product
-from modules.products.schemas import (
-    CreateProductRequest,
-    ProductFilters,
-    UpdateProductRequest,
-)
+from .models import Product
+from .schemas import CreateProductRequest, ProductFilters, UpdateProductRequest
 
 
 class ProductError(Exception):
@@ -35,18 +30,11 @@ class ProductService:
         if req.stock < 0:
             raise ProductError("stock cannot be negative")
         self._assert_unique_name(req.name, req.category)
-
-        product = Product(
-            name=req.name,
-            category=req.category,
-            price=req.price,
-            stock=req.stock,
-            active=req.active,
-        )
+        product = Product(name=req.name, category=req.category,
+                          price=req.price, stock=req.stock, active=req.active)
         self._session.add(product)
         self._session.commit()
         self._session.refresh(product)
-
         self._publish_event("product.created", product)
         return product
 
@@ -68,20 +56,16 @@ class ProductService:
         product = self.get(product_id)
         if req.price is not None and req.price <= 0:
             raise ProductError("price must be greater than 0")
-
         new_name = req.name if req.name is not None else product.name
         new_category = req.category if req.category is not None else product.category
-
         if new_name != product.name or new_category != product.category:
             self._assert_unique_name(new_name, new_category, exclude_id=product_id)
-
         if req.name is not None:
             product.name = req.name
         if req.category is not None:
             product.category = req.category
         if req.price is not None:
             product.price = req.price
-
         self._session.commit()
         self._session.refresh(product)
         return product
@@ -93,7 +77,6 @@ class ProductService:
         product.stock = stock
         self._session.commit()
         self._session.refresh(product)
-
         if stock == 0:
             self._publish_sns_alert("low_stock", product)
         return product
@@ -113,16 +96,15 @@ class ProductService:
         self._session.commit()
         self._publish_event("product.deleted", product)
 
-    def upload_asset(self, product_id: int, key: str, data: bytes, content_type: str = "application/octet-stream") -> str:
+    def upload_asset(self, product_id: int, key: str, data: bytes,
+                     content_type: str = "application/octet-stream") -> str:
         self.get(product_id)
         if self._s3 and self._bucket:
             self._s3.put_object(Bucket=self._bucket, Key=key, Body=data, ContentType=content_type)
         return key
 
     def _assert_unique_name(self, name: str, category: str, exclude_id: Optional[int] = None) -> None:
-        q = self._session.query(Product).filter(
-            Product.name == name, Product.category == category
-        )
+        q = self._session.query(Product).filter(Product.name == name, Product.category == category)
         if exclude_id is not None:
             q = q.filter(Product.id != exclude_id)
         if q.first() is not None:
