@@ -3,6 +3,9 @@ from flask import Blueprint, current_app, jsonify, request
 import boto3
 from sqlalchemy.orm import Session
 
+from lib.openapi import schema
+
+from .models import Employee
 from .schemas import AssignManagerRequest, EmployeeFilters, HireRequest, PromoteRequest
 from .service import HRError, HRService
 
@@ -26,6 +29,7 @@ def _err(msg: str, status: int):
 
 
 @hr_bp.post("")
+@schema(request=HireRequest, response=Employee, status=201)
 def hire():
     data = request.get_json(silent=True) or {}
     missing = [f for f in ("name", "email", "department", "role", "salary") if f not in data]
@@ -48,6 +52,7 @@ def hire():
 
 
 @hr_bp.get("")
+@schema(query=EmployeeFilters, response=Employee, many=True)
 def list_employees():
     active_param = request.args.get("active")
     active = None if active_param is None else active_param.lower() == "true"
@@ -61,6 +66,7 @@ def list_employees():
 
 
 @hr_bp.get("/<int:eid>")
+@schema(response=Employee)
 def get_employee(eid: int):
     svc = _make_service()
     try:
@@ -70,6 +76,7 @@ def get_employee(eid: int):
 
 
 @hr_bp.post("/<int:eid>/promote")
+@schema(request=PromoteRequest, response=Employee)
 def promote(eid: int):
     data = request.get_json(silent=True) or {}
     if "salary_increase_pct" not in data:
@@ -83,6 +90,7 @@ def promote(eid: int):
 
 
 @hr_bp.post("/<int:eid>/manager")
+@schema(request=AssignManagerRequest, response=Employee)
 def assign_manager(eid: int):
     data = request.get_json(silent=True) or {}
     if "manager_id" not in data:
@@ -96,6 +104,7 @@ def assign_manager(eid: int):
 
 
 @hr_bp.get("/<int:eid>/team")
+@schema(response=Employee, many=True)
 def get_team(eid: int):
     svc = _make_service()
     try:
@@ -105,6 +114,7 @@ def get_team(eid: int):
 
 
 @hr_bp.patch("/<int:eid>/status")
+@schema(response=Employee)
 def toggle_status(eid: int):
     svc = _make_service()
     try:

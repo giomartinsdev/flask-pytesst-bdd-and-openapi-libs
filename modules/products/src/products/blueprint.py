@@ -3,7 +3,10 @@ from flask import Blueprint, current_app, jsonify, request
 import boto3
 from sqlalchemy.orm import Session
 
-from .schemas import CreateProductRequest, ProductFilters, UpdateProductRequest
+from lib.openapi import schema
+
+from .models import Product
+from .schemas import CreateProductRequest, ProductFilters, UpdateProductRequest, UpdateStockRequest
 from .service import ProductError, ProductService
 
 products_bp = Blueprint("products", __name__, url_prefix="/products")
@@ -28,6 +31,7 @@ def _error(message: str, status: int):
 
 
 @products_bp.post("")
+@schema(request=CreateProductRequest, response=Product, status=201)
 def create_product():
     data = request.get_json(silent=True) or {}
     missing = [f for f in ("name", "category", "price") if f not in data]
@@ -45,6 +49,7 @@ def create_product():
 
 
 @products_bp.get("")
+@schema(query=ProductFilters, response=Product, many=True)
 def list_products():
     active_param = request.args.get("active")
     active = None if active_param is None else active_param.lower() == "true"
@@ -54,6 +59,7 @@ def list_products():
 
 
 @products_bp.get("/<int:product_id>")
+@schema(response=Product)
 def get_product(product_id: int):
     svc = _make_service()
     try:
@@ -63,6 +69,7 @@ def get_product(product_id: int):
 
 
 @products_bp.put("/<int:product_id>")
+@schema(request=UpdateProductRequest, response=Product)
 def update_product(product_id: int):
     data = request.get_json(silent=True) or {}
     svc = _make_service()
@@ -76,6 +83,7 @@ def update_product(product_id: int):
 
 
 @products_bp.patch("/<int:product_id>/stock")
+@schema(request=UpdateStockRequest, response=Product)
 def update_stock(product_id: int):
     data = request.get_json(silent=True) or {}
     if "stock" not in data:
@@ -88,6 +96,7 @@ def update_stock(product_id: int):
 
 
 @products_bp.patch("/<int:product_id>/status")
+@schema(response=Product)
 def toggle_status(product_id: int):
     svc = _make_service()
     try:
@@ -97,6 +106,7 @@ def toggle_status(product_id: int):
 
 
 @products_bp.delete("/<int:product_id>")
+@schema(status=204)
 def delete_product(product_id: int):
     svc = _make_service()
     try:
