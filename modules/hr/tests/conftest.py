@@ -29,6 +29,7 @@ _HR_TOPIC = "hr-alerts"
 def _hr_config():
     return BDDConfig.from_env(
         db_base=Base,
+        db_type="sqlserver",
         sqs_queues=[_HR_QUEUE],
         sns_topics=[_HR_TOPIC],
     )

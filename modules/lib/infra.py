@@ -31,8 +31,11 @@ class BDDInfra:
 
     def truncate_tables(self, *table_names: str) -> None:
         with self.db_engine.connect() as conn:
-            for table in table_names:
-                conn.execute(text(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE"))
+            if self.config.db_type == "sqlserver":
+                _sqlserver_truncate(conn, table_names)
+            else:
+                for table in table_names:
+                    conn.execute(text(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE"))
             conn.commit()
 
     def stop(self) -> None:
@@ -44,7 +47,13 @@ class BDDInfra:
     def from_config(cls, config: BDDConfig) -> "BDDInfra":
         containers: List[Any] = []
 
-        db_url = config.db_url or _start_postgres(config, containers)
+        if config.db_url:
+            db_url = config.db_url
+        elif config.db_type == "sqlserver":
+            db_url = _start_sqlserver(config, containers)
+        else:
+            db_url = _start_postgres(config, containers)
+
         aws_endpoint = config.aws_endpoint or _start_localstack(config, containers)
 
         engine = create_engine(db_url)
@@ -87,6 +96,30 @@ class BDDInfra:
         )
 
 
+def _sqlserver_truncate(conn, table_names) -> None:
+    for table in table_names:
+        # Disable all FK constraints (handles self-referential and cross-table FKs)
+        fks = conn.execute(
+            text("SELECT name FROM sys.foreign_keys WHERE OBJECT_NAME(parent_object_id) = :t"),
+            {"t": table},
+        ).fetchall()
+        for (fk,) in fks:
+            conn.execute(text(f"ALTER TABLE [{table}] NOCHECK CONSTRAINT [{fk}]"))
+
+        conn.execute(text(f"DELETE FROM [{table}]"))
+
+        # Reset identity seed if the table has an identity column
+        has_identity = conn.execute(
+            text("SELECT COUNT(1) FROM sys.identity_columns WHERE OBJECT_NAME(object_id) = :t"),
+            {"t": table},
+        ).scalar()
+        if has_identity:
+            conn.execute(text(f"DBCC CHECKIDENT ('{table}', RESEED, 0)"))
+
+        for (fk,) in fks:
+            conn.execute(text(f"ALTER TABLE [{table}] WITH CHECK CHECK CONSTRAINT [{fk}]"))
+
+
 def _start_postgres(config: BDDConfig, containers: list) -> str:
     from testcontainers.postgres import PostgresContainer
 
@@ -99,6 +132,19 @@ def _start_postgres(config: BDDConfig, containers: list) -> str:
     pg.start()
     containers.append(pg)
     return pg.get_connection_url()
+
+
+def _start_sqlserver(config: BDDConfig, containers: list) -> str:
+    from testcontainers.mssql import SqlServerContainer
+
+    mssql = SqlServerContainer(
+        image=config.sqlserver_image,
+        password="BddTest1!",
+        dbname="tempdb",
+    )
+    mssql.start()
+    containers.append(mssql)
+    return mssql.get_connection_url()
 
 
 def _start_localstack(config: BDDConfig, containers: list) -> str:

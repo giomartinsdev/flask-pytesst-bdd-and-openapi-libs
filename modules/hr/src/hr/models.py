@@ -28,7 +28,7 @@ class Employee(Base):
     name = Column(String(255), nullable=False)
     email = Column(String(255), nullable=False, unique=True, index=True)
     department = Column(String(100), nullable=False)
-    role = Column(Enum(Role), nullable=False)
+    role = Column(Enum(Role, native_enum=False, length=20), nullable=False)
     salary = Column(Numeric(12, 2), nullable=False)
     hire_date = Column(Date, nullable=False)
     role_since = Column(Date, nullable=False)
