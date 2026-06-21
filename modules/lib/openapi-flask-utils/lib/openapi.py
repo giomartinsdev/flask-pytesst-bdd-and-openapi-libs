@@ -292,12 +292,27 @@ def _operation(rule_endpoint: str, method: str, path_params: list[dict], func, d
 
 # ── Spec builder ───────────────────────────────────────────────────────────────
 
-def build_spec(app, title: str, version: str) -> dict:
+def build_spec(
+    app,
+    title: str,
+    version: str,
+    security_schemes: dict | None = None,
+) -> dict:
     """Build a full OpenAPI 3.0.3 spec dict from a Flask app's URL map.
 
     Introspects every route decorated with @schema() and produces a complete
     OpenAPI document including paths, operations, and component schemas.
+
+    Args:
+        app:              Flask application instance.
+        title:            API title.
+        version:          API version string.
+        security_schemes: Optional dict of OpenAPI security scheme objects to
+                          add under components.securitySchemes.  When provided,
+                          every operation inherits a global security requirement
+                          for each named scheme.
     """
+    _internal_routes = {"/openapi.json", "/docs"}
     defs: dict = {}
     spec: dict = {
         "openapi": "3.0.3",
@@ -306,7 +321,7 @@ def build_spec(app, title: str, version: str) -> dict:
     }
 
     for rule in sorted(app.url_map.iter_rules(), key=lambda r: r.rule):
-        if rule.rule.startswith("/static") or rule.rule == "/openapi.json":
+        if rule.rule.startswith("/static") or rule.rule in _internal_routes:
             continue
         methods = sorted(rule.methods - _SKIP_METHODS)
         if not methods:
@@ -321,16 +336,27 @@ def build_spec(app, title: str, version: str) -> dict:
                 rule.endpoint, method, path_params, func, defs
             )
 
+    components: dict = {}
     if defs:
-        spec["components"] = {"schemas": defs}
+        components["schemas"] = defs
+    if security_schemes:
+        components["securitySchemes"] = security_schemes
+        spec["security"] = [{name: []} for name in security_schemes]
+    if components:
+        spec["components"] = components
 
     return spec
 
 
 # ── Route installer ────────────────────────────────────────────────────────────
 
-def install_openapi_route(app, title: str = None, version: str = "0.1.0") -> None:
-    """Register a GET /openapi.json route on the Flask app.
+def install_openapi_route(
+    app,
+    title: str = None,
+    version: str = "0.1.0",
+    jwt: bool = True,
+) -> None:
+    """Register GET /openapi.json and GET /docs (Swagger UI) routes on the Flask app.
 
     The spec is built lazily on the first request so that all blueprints
     registered after this call are still included.
@@ -339,14 +365,49 @@ def install_openapi_route(app, title: str = None, version: str = "0.1.0") -> Non
         app:     A Flask application instance.
         title:   API title for the OpenAPI info object. Defaults to the app name.
         version: API version string (default "0.1.0").
+        jwt:     When True (default), adds a BearerAuth / JWT security scheme to
+                 the spec and enables the Authorize button in Swagger UI.
     """
-    from flask import jsonify
+    from flask import jsonify, make_response
 
     _resolved_title = title or f"{app.name.replace('_', ' ').title()} API"
     _spec_cache: dict = {}
 
+    _security_schemes: dict | None = (
+        {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "Paste your JWT token (without the 'Bearer ' prefix).",
+            }
+        }
+        if jwt
+        else None
+    )
+
     @app.get("/openapi.json")
     def _openapi_json():
         if not _spec_cache:
-            _spec_cache.update(build_spec(app, title=_resolved_title, version=version))
+            _spec_cache.update(
+                build_spec(
+                    app,
+                    title=_resolved_title,
+                    version=version,
+                    security_schemes=_security_schemes,
+                )
+            )
         return jsonify(_spec_cache)
+
+    @app.get("/docs")
+    def _swagger_ui():
+        from string import Template
+        from pathlib import Path
+        template = Template(
+            (Path(__file__).parent / "swagger_ui.html").read_text(encoding="utf-8")
+        )
+        html = template.substitute(
+            title=_resolved_title,
+            persist_authorization="persistAuthorization: true," if jwt else "",
+        )
+        return make_response(html, 200, {"Content-Type": "text/html; charset=utf-8"})
