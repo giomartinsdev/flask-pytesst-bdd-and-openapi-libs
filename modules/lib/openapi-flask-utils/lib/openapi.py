@@ -1,10 +1,8 @@
-"""Lightweight OpenAPI metadata decorator, schema converters, and route installer.
+"""Lightweight OpenAPI 3.0 decorator, schema converters, and route installer.
 
 Usage in a blueprint:
 
     from lib.openapi import schema
-    from .schemas import CreateProductRequest
-    from .models import Product
 
     @bp.post("")
     @schema(request=CreateProductRequest, response=Product, status=201)
@@ -25,48 +23,52 @@ Usage in create_app():
         ...
         install_openapi_route(app, title="My API", version="0.1.0")
         return app
-
-    # Clients can then GET /openapi.json
 """
+from __future__ import annotations
+
 import dataclasses
 import datetime
-import json
+import enum
 import re
+import typing
 from typing import Any, Union, get_args, get_origin
 
 
-# ── Route decorator ────────────────────────────────────────────────────────────
+# ── Public decorator ───────────────────────────────────────────────────────────
 
 def schema(
     *,
-    request=None,
-    query=None,
-    response=None,
+    request: Any = None,
+    query: Any = None,
+    response: Any = None,
     many: bool = False,
     status: int = 200,
 ):
-    """Attach OpenAPI schema metadata to a Flask route handler.
+    """Attach OpenAPI metadata to a Flask route handler.
 
     Args:
-        request:  dataclass used as the JSON request body
-        query:    dataclass whose fields become query-string parameters
-        response: dataclass or SQLAlchemy model returned by the endpoint
-        many:     True when the response is a list of `response`
-        status:   success HTTP status code
+        request:  dataclass for the JSON request body.
+        query:    dataclass whose fields become query-string parameters.
+        response: dataclass or SQLAlchemy model returned by the endpoint.
+        many:     True when the response is a list of *response*.
+        status:   success HTTP status code.
     """
     def decorator(func):
-        func.__openapi_request__ = request
-        func.__openapi_query__ = query
+        func.__openapi_request__  = request
+        func.__openapi_query__    = query
         func.__openapi_response__ = response
-        func.__openapi_many__ = many
-        func.__openapi_status__ = status
+        func.__openapi_many__     = many
+        func.__openapi_status__   = status
         return func
     return decorator
 
 
-# ── Type converters ────────────────────────────────────────────────────────────
+# ── Constants ──────────────────────────────────────────────────────────────────
 
-_PY_PRIMITIVES: dict = {
+_SKIP_METHODS: frozenset[str] = frozenset({"HEAD", "OPTIONS"})
+_INTERNAL_ROUTES: frozenset[str] = frozenset({"/openapi.json", "/docs"})
+
+_PY_TO_JSON: dict[type, dict] = {
     str:               {"type": "string"},
     int:               {"type": "integer"},
     float:             {"type": "number"},
@@ -75,8 +77,7 @@ _PY_PRIMITIVES: dict = {
     datetime.datetime: {"type": "string", "format": "date-time"},
 }
 
-# Flask converter names → OpenAPI types
-_FLASK_TYPE = {
+_FLASK_CONVERTER_MAP: dict[str, dict] = {
     "int":    {"type": "integer"},
     "float":  {"type": "number", "format": "float"},
     "uuid":   {"type": "string", "format": "uuid"},
@@ -85,42 +86,55 @@ _FLASK_TYPE = {
     "any":    {"type": "string"},
 }
 
-_SKIP_METHODS = {"HEAD", "OPTIONS"}
 
+# ── Endpoint metadata ──────────────────────────────────────────────────────────
+
+@dataclasses.dataclass(slots=True)
+class _EndpointMeta:
+    """@schema() attributes collected from a view function."""
+    request_cls: Any
+    query_cls: Any
+    response_cls: Any
+    many: bool
+    status: int
+
+    @classmethod
+    def from_view(cls, func: Any) -> _EndpointMeta:
+        return cls(
+            request_cls  = getattr(func, "__openapi_request__",  None),
+            query_cls    = getattr(func, "__openapi_query__",    None),
+            response_cls = getattr(func, "__openapi_response__", None),
+            many         = getattr(func, "__openapi_many__",     False),
+            status       = getattr(func, "__openapi_status__",   200),
+        )
+
+
+# ── Type → JSON Schema converters ─────────────────────────────────────────────
 
 def _annotation_to_schema(tp: Any) -> dict:
-    if tp in _PY_PRIMITIVES:
-        return _PY_PRIMITIVES[tp].copy()
+    if tp in _PY_TO_JSON:
+        return dict(_PY_TO_JSON[tp])
 
     origin = get_origin(tp)
-    args = get_args(tp)
+    args   = get_args(tp)
 
-    # Optional[X]  →  unwrap to X (nullability handled via `required`)
     if origin is Union:
         non_none = [a for a in args if a is not type(None)]
         if non_none:
             return _annotation_to_schema(non_none[0])
 
-    # List[X]
     if origin is list:
         items = _annotation_to_schema(args[0]) if args else {"type": "string"}
         return {"type": "array", "items": items}
 
-    # Enum subclass
-    try:
-        import enum
-        if isinstance(tp, type) and issubclass(tp, enum.Enum):
-            return {"type": "string", "enum": [e.value for e in tp]}
-    except Exception:
-        pass
+    if isinstance(tp, type) and issubclass(tp, enum.Enum):
+        return {"type": "string", "enum": [e.value for e in tp]}
 
     return {"type": "string"}
 
 
-def dataclass_to_schema(cls) -> dict:
+def dataclass_to_schema(cls: Any) -> dict:
     """Convert a Python dataclass to a JSON Schema object."""
-    import typing
-
     if not dataclasses.is_dataclass(cls):
         return {"type": "object"}
 
@@ -129,23 +143,17 @@ def dataclass_to_schema(cls) -> dict:
     except Exception:
         hints = {f.name: str for f in dataclasses.fields(cls)}
 
-    properties: dict = {}
+    properties: dict[str, dict] = {}
     required: list[str] = []
 
     for f in dataclasses.fields(cls):
         hint = hints.get(f.name, str)
-
-        # Optional[X] = Union[X, None] → field is not required
-        origin = get_origin(hint)
-        args = get_args(hint)
-        is_optional = origin is Union and type(None) in args
-
-        properties[f.name] = _annotation_to_schema(hint)
-
+        is_optional = get_origin(hint) is Union and type(None) in get_args(hint)
         has_default = (
             f.default is not dataclasses.MISSING
             or f.default_factory is not dataclasses.MISSING  # type: ignore[misc]
         )
+        properties[f.name] = _annotation_to_schema(hint)
         if not has_default and not is_optional:
             required.append(f.name)
 
@@ -155,15 +163,14 @@ def dataclass_to_schema(cls) -> dict:
     return result
 
 
-def model_to_schema(model_cls) -> dict:
-    """Convert a SQLAlchemy model to a JSON Schema object via column inspection."""
+def model_to_schema(model_cls: Any) -> dict:
+    """Convert a SQLAlchemy declarative model to a JSON Schema object."""
+    from sqlalchemy import Boolean, Date, DateTime
+    from sqlalchemy import Enum as SAEnum
+    from sqlalchemy import Integer, Numeric, String, Text
     from sqlalchemy import inspect as sa_inspect
-    from sqlalchemy import (
-        Boolean, Date, DateTime, Enum as SAEnum,
-        Integer, Numeric, String, Text,
-    )
 
-    _SA_MAP = {
+    _SA_MAP: dict = {
         Integer:  {"type": "integer"},
         String:   {"type": "string"},
         Text:     {"type": "string"},
@@ -179,12 +186,12 @@ def model_to_schema(model_cls) -> dict:
     except Exception:
         return {"type": "object"}
 
-    properties: dict = {}
+    properties: dict[str, dict] = {}
     for col in mapper.columns:
         col_schema: dict = {"type": "string"}
         for sa_type, js in _SA_MAP.items():
             if isinstance(col.type, sa_type):
-                col_schema = js.copy()
+                col_schema = dict(js)
                 if isinstance(col.type, SAEnum) and col.type.enums:
                     col_schema["enum"] = list(col.type.enums)
                 break
@@ -195,9 +202,10 @@ def model_to_schema(model_cls) -> dict:
     return {"type": "object", "properties": properties}
 
 
-# ── Internal helpers ───────────────────────────────────────────────────────────
+# ── URL / path helpers ─────────────────────────────────────────────────────────
 
-def _rule_to_openapi(rule: str) -> tuple[str, list[dict]]:
+def _flask_rule_to_openapi(rule: str) -> tuple[str, list[dict]]:
+    """Convert ``/items/<int:id>`` → ``("/items/{id}", [path_param_dict])``."""
     params: list[dict] = []
 
     def _replace(m: re.Match) -> str:
@@ -207,96 +215,105 @@ def _rule_to_openapi(rule: str) -> tuple[str, list[dict]]:
             "name": name,
             "in": "path",
             "required": True,
-            "schema": _FLASK_TYPE.get(converter, {"type": "string"}),
+            "schema": _FLASK_CONVERTER_MAP.get(converter, {"type": "string"}),
         })
         return f"{{{name}}}"
 
-    path = re.sub(r"<([^>]+)>", _replace, rule)
-    return path, params
+    return re.sub(r"<([^>]+)>", _replace, rule), params
 
 
-def _resolve_schema(cls, defs: dict) -> dict:
-    """Register a class schema in defs and return a $ref dict."""
+def _endpoint_tag(endpoint: str) -> str:
+    """``'products.create_product'`` → ``'products'``, ``'index'`` → ``'general'``."""
+    return endpoint.split(".")[0] if "." in endpoint else "general"
+
+
+# ── Schema registry ────────────────────────────────────────────────────────────
+
+def _register_schema(cls: Any, defs: dict) -> dict:
+    """Ensure *cls* is in *defs* and return a ``$ref`` to it."""
     name = cls.__name__
     if name not in defs:
-        if dataclasses.is_dataclass(cls):
-            defs[name] = dataclass_to_schema(cls)
-        else:
-            defs[name] = model_to_schema(cls)
+        defs[name] = (
+            dataclass_to_schema(cls)
+            if dataclasses.is_dataclass(cls)
+            else model_to_schema(cls)
+        )
     return {"$ref": f"#/components/schemas/{name}"}
 
 
-def _endpoint_tag(rule_endpoint: str) -> str:
-    """Derive an OpenAPI tag from a Flask endpoint name.
+# ── Per-operation builders ─────────────────────────────────────────────────────
 
-    'products.create_product' → 'products'
-    'hr.hire'                 → 'hr'
-    'index'                   → 'general'
-    """
-    if "." in rule_endpoint:
-        return rule_endpoint.split(".")[0]
-    return "general"
+def _build_query_params(query_cls: Any) -> list[dict]:
+    if query_cls is None or not dataclasses.is_dataclass(query_cls):
+        return []
+
+    try:
+        hints = typing.get_type_hints(query_cls)
+    except Exception:
+        hints = {f.name: str for f in dataclasses.fields(query_cls)}
+
+    params: list[dict] = []
+    for f in dataclasses.fields(query_cls):
+        hint = hints.get(f.name, str)
+        is_optional = get_origin(hint) is Union and type(None) in get_args(hint)
+        params.append({
+            "name": f.name,
+            "in": "query",
+            "required": not is_optional and f.default is dataclasses.MISSING,
+            "schema": _annotation_to_schema(hint),
+        })
+    return params
 
 
-def _operation(rule_endpoint: str, method: str, path_params: list[dict], func, defs: dict) -> dict:
-    import typing
-    from typing import Union, get_args, get_origin
+def _build_request_body(request_cls: Any, defs: dict) -> dict | None:
+    if request_cls is None:
+        return None
+    return {
+        "required": True,
+        "content": {
+            "application/json": {"schema": _register_schema(request_cls, defs)},
+        },
+    }
 
-    status = getattr(func, "__openapi_status__", 200)
-    request_cls = getattr(func, "__openapi_request__", None)
-    query_cls = getattr(func, "__openapi_query__", None)
-    response_cls = getattr(func, "__openapi_response__", None)
-    many = getattr(func, "__openapi_many__", False)
 
+def _build_response(response_cls: Any, many: bool, status: int, defs: dict) -> tuple[str, dict]:
+    """Return ``(status_code_str, response_object)`` for the operation."""
+    if response_cls is None:
+        return str(status), {"description": "No content" if status == 204 else "OK"}
+
+    ref = _register_schema(response_cls, defs)
+    body_schema = {"type": "array", "items": ref} if many else ref
+    return str(status), {
+        "description": "OK",
+        "content": {"application/json": {"schema": body_schema}},
+    }
+
+
+def _build_operation(
+    endpoint: str,
+    method: str,
+    path_params: list[dict],
+    meta: _EndpointMeta,
+    defs: dict,
+) -> dict:
     op: dict = {
-        "operationId": f"{method.lower()}_{rule_endpoint}",
-        "tags": [_endpoint_tag(rule_endpoint)],
+        "operationId": f"{method.lower()}_{endpoint}",
+        "tags": [_endpoint_tag(endpoint)],
         "responses": {},
     }
 
-    parameters = list(path_params)
-
-    if query_cls is not None and dataclasses.is_dataclass(query_cls):
-        try:
-            hints = typing.get_type_hints(query_cls)
-        except Exception:
-            hints = {f.name: str for f in dataclasses.fields(query_cls)}
-
-        for f in dataclasses.fields(query_cls):
-            hint = hints.get(f.name, str)
-            is_optional = (
-                get_origin(hint) is Union and type(None) in get_args(hint)
-            )
-            parameters.append({
-                "name": f.name,
-                "in": "query",
-                "required": not is_optional and f.default is dataclasses.MISSING,
-                "schema": _annotation_to_schema(hint),
-            })
-
+    parameters = path_params + _build_query_params(meta.query_cls)
     if parameters:
         op["parameters"] = parameters
 
-    if request_cls is not None:
-        op["requestBody"] = {
-            "required": True,
-            "content": {
-                "application/json": {
-                    "schema": _resolve_schema(request_cls, defs),
-                }
-            },
-        }
+    request_body = _build_request_body(meta.request_cls, defs)
+    if request_body is not None:
+        op["requestBody"] = request_body
 
-    if response_cls is not None:
-        ref = _resolve_schema(response_cls, defs)
-        body_schema = {"type": "array", "items": ref} if many else ref
-        op["responses"][str(status)] = {
-            "description": "OK",
-            "content": {"application/json": {"schema": body_schema}},
-        }
-    else:
-        op["responses"][str(status)] = {"description": "No content" if status == 204 else "OK"}
-
+    status_key, response_obj = _build_response(
+        meta.response_cls, meta.many, meta.status, defs
+    )
+    op["responses"][status_key] = response_obj
     op["responses"]["400"] = {"description": "Bad request"}
     op["responses"]["404"] = {"description": "Not found"}
 
@@ -306,53 +323,49 @@ def _operation(rule_endpoint: str, method: str, path_params: list[dict], func, d
 # ── Spec builder ───────────────────────────────────────────────────────────────
 
 def build_spec(
-    app,
+    app: Any,
     title: str,
     version: str,
     security_schemes: dict | None = None,
 ) -> dict:
     """Build a full OpenAPI 3.0.3 spec dict from a Flask app's URL map.
 
-    Introspects every route decorated with @schema() and produces a complete
-    OpenAPI document including paths, operations, and component schemas.
-
     Args:
         app:              Flask application instance.
         title:            API title.
         version:          API version string.
-        security_schemes: Optional dict of OpenAPI security scheme objects to
-                          add under components.securitySchemes.  When provided,
-                          every operation inherits a global security requirement
-                          for each named scheme.
+        security_schemes: Optional OpenAPI security scheme objects; when given,
+                          every operation inherits a global security requirement.
     """
-    _internal_routes = {"/openapi.json", "/docs"}
     defs: dict = {}
     seen_tags: list[str] = []
-    spec: dict = {
-        "openapi": "3.0.3",
-        "info": {"title": title, "version": version},
-        "paths": {},
-    }
+    paths: dict = {}
 
     for rule in sorted(app.url_map.iter_rules(), key=lambda r: r.rule):
-        if rule.rule.startswith("/static") or rule.rule in _internal_routes:
+        if rule.rule.startswith("/static") or rule.rule in _INTERNAL_ROUTES:
             continue
         methods = sorted(rule.methods - _SKIP_METHODS)
         if not methods:
             continue
 
-        path, path_params = _rule_to_openapi(rule.rule)
-        spec["paths"].setdefault(path, {})
-        func = app.view_functions.get(rule.endpoint)
+        path, path_params = _flask_rule_to_openapi(rule.rule)
+        meta = _EndpointMeta.from_view(app.view_functions.get(rule.endpoint))
+        tag  = _endpoint_tag(rule.endpoint)
 
-        tag = _endpoint_tag(rule.endpoint)
         if tag not in seen_tags:
             seen_tags.append(tag)
 
+        path_item = paths.setdefault(path, {})
         for method in methods:
-            spec["paths"][path][method.lower()] = _operation(
-                rule.endpoint, method, path_params, func, defs
+            path_item[method.lower()] = _build_operation(
+                rule.endpoint, method, path_params, meta, defs
             )
+
+    spec: dict = {
+        "openapi": "3.0.3",
+        "info": {"title": title, "version": version},
+        "paths": paths,
+    }
 
     if seen_tags:
         spec["tags"] = [
@@ -375,29 +388,30 @@ def build_spec(
 # ── Route installer ────────────────────────────────────────────────────────────
 
 def install_openapi_route(
-    app,
-    title: str = None,
+    app: Any,
+    title: str | None = None,
     version: str = "0.1.0",
     jwt: bool = True,
 ) -> None:
-    """Register GET /openapi.json and GET /docs (Swagger UI) routes on the Flask app.
+    """Register GET /openapi.json and GET /docs (Swagger UI) on the Flask app.
 
-    The spec is built lazily on the first request so that all blueprints
-    registered after this call are still included.
+    The spec is built lazily on first request so all blueprints registered
+    after this call are still included.
 
     Args:
-        app:     A Flask application instance.
-        title:   API title for the OpenAPI info object. Defaults to the app name.
-        version: API version string (default "0.1.0").
-        jwt:     When True (default), adds a BearerAuth / JWT security scheme to
-                 the spec and enables the Authorize button in Swagger UI.
+        app:     Flask application instance.
+        title:   API title; defaults to the app name.
+        version: API version string.
+        jwt:     Add a BearerAuth JWT security scheme and enable the
+                 Authorize button in Swagger UI.
     """
+    from pathlib import Path
+    from string import Template
+
     from flask import jsonify, make_response
 
-    _resolved_title = title or f"{app.name.replace('_', ' ').title()} API"
-    _spec_cache: dict = {}
-
-    _security_schemes: dict | None = (
+    resolved_title = title or f"{app.name.replace('_', ' ').title()} API"
+    security_schemes: dict | None = (
         {
             "BearerAuth": {
                 "type": "http",
@@ -410,28 +424,28 @@ def install_openapi_route(
         else None
     )
 
+    spec_cache: dict = {}
+    ui_template = Template(
+        (Path(__file__).parent / "swagger_ui.html").read_text(encoding="utf-8")
+    )
+
     @app.get("/openapi.json")
     def _openapi_json():
-        if not _spec_cache:
-            _spec_cache.update(
+        if not spec_cache:
+            spec_cache.update(
                 build_spec(
                     app,
-                    title=_resolved_title,
+                    title=resolved_title,
                     version=version,
-                    security_schemes=_security_schemes,
+                    security_schemes=security_schemes,
                 )
             )
-        return jsonify(_spec_cache)
+        return jsonify(spec_cache)
 
     @app.get("/docs")
     def _swagger_ui():
-        from string import Template
-        from pathlib import Path
-        template = Template(
-            (Path(__file__).parent / "swagger_ui.html").read_text(encoding="utf-8")
-        )
-        html = template.substitute(
-            title=_resolved_title,
+        html = ui_template.substitute(
+            title=resolved_title,
             persist_authorization="persistAuthorization: true," if jwt else "",
         )
         return make_response(html, 200, {"Content-Type": "text/html; charset=utf-8"})
