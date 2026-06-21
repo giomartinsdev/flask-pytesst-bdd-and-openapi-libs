@@ -97,18 +97,41 @@ class BDDInfra:
 
 
 def _sqlserver_truncate(conn, table_names) -> None:
+    # Collect all FK constraints that need to be disabled upfront — including
+    # cross-table incoming FKs — to handle circular references (e.g. employees
+    # ↔ areas).  Disable all, delete all, then re-enable all once tables are empty.
+    to_disable: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
     for table in table_names:
-        # Disable all FK constraints (handles self-referential and cross-table FKs)
-        fks = conn.execute(
+        for (fk,) in conn.execute(
             text("SELECT name FROM sys.foreign_keys WHERE OBJECT_NAME(parent_object_id) = :t"),
             {"t": table},
-        ).fetchall()
-        for (fk,) in fks:
-            conn.execute(text(f"ALTER TABLE [{table}] NOCHECK CONSTRAINT [{fk}]"))
+        ).fetchall():
+            key = (table, fk)
+            if key not in seen:
+                seen.add(key)
+                to_disable.append(key)
 
+        for (fk, parent) in conn.execute(
+            text("""
+                SELECT fk.name, OBJECT_NAME(fk.parent_object_id)
+                FROM sys.foreign_keys fk
+                WHERE OBJECT_NAME(fk.referenced_object_id) = :t
+                  AND OBJECT_NAME(fk.parent_object_id) != :t
+            """),
+            {"t": table},
+        ).fetchall():
+            key = (parent, fk)
+            if key not in seen:
+                seen.add(key)
+                to_disable.append(key)
+
+    for (tbl, fk) in to_disable:
+        conn.execute(text(f"ALTER TABLE [{tbl}] NOCHECK CONSTRAINT [{fk}]"))
+
+    for table in table_names:
         conn.execute(text(f"DELETE FROM [{table}]"))
-
-        # Reset identity seed if the table has an identity column
         has_identity = conn.execute(
             text("SELECT COUNT(1) FROM sys.identity_columns WHERE OBJECT_NAME(object_id) = :t"),
             {"t": table},
@@ -116,8 +139,9 @@ def _sqlserver_truncate(conn, table_names) -> None:
         if has_identity:
             conn.execute(text(f"DBCC CHECKIDENT ('{table}', RESEED, 0)"))
 
-        for (fk,) in fks:
-            conn.execute(text(f"ALTER TABLE [{table}] WITH CHECK CHECK CONSTRAINT [{fk}]"))
+    # Tables are now empty — re-enable with CHECK is safe
+    for (tbl, fk) in to_disable:
+        conn.execute(text(f"ALTER TABLE [{tbl}] WITH CHECK CHECK CONSTRAINT [{fk}]"))
 
 
 def _start_postgres(config: BDDConfig, containers: list) -> str:

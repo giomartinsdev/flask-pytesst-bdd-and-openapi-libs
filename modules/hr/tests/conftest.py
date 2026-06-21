@@ -20,8 +20,13 @@ from hr_steps import *  # noqa: F401,F403
 
 from hr.app import create_app
 from hr.db import Base
-from hr.service import HRService
-import hr.blueprint as bp_module
+from hr.application.employee_service import EmployeeApplicationService
+from hr.application.area_service import AreaApplicationService
+from hr.application.event_bus import EventBus
+from hr.domain.employee.repository import EmployeeRepository
+from hr.domain.area.repository import AreaRepository
+import hr.api.employees.blueprint as emp_bp_module
+import hr.api.areas.blueprint as area_bp_module
 
 _HR_QUEUE = "hr-events"
 _HR_TOPIC = "hr-alerts"
@@ -56,7 +61,7 @@ def hr_queue_url(_hr_infra):
 
 @pytest.fixture(autouse=True)
 def _hr_reset(_hr_infra):
-    _hr_infra.truncate_tables("employees")
+    _hr_infra.truncate_tables("areas", "employees")
     _hr_infra.drain_all_queues()
     yield
     _hr_infra.drain_all_queues()
@@ -68,15 +73,30 @@ def _hr_flask(_hr_infra):
     app.config["TESTING"] = True
     _sessions = []
 
-    def _patched():
-        s = _hr_infra.make_session()
-        _sessions.append(s)
-        return HRService(
-            session=s,
+    def _make_bus():
+        return EventBus(
             sqs_client=_hr_infra.sqs,
             sns_client=_hr_infra.sns,
-            sqs_queue_url=_hr_infra.queue_urls[_HR_QUEUE],
-            sns_topic_arn=_hr_infra.topic_arns[_HR_TOPIC],
+            queue_url=_hr_infra.queue_urls[_HR_QUEUE],
+            topic_arn=_hr_infra.topic_arns[_HR_TOPIC],
+        )
+
+    def _patched_emp():
+        s = _hr_infra.make_session()
+        _sessions.append(s)
+        return EmployeeApplicationService(
+            employee_repo=EmployeeRepository(s),
+            area_repo=AreaRepository(s),
+            event_bus=_make_bus(),
+        )
+
+    def _patched_area():
+        s = _hr_infra.make_session()
+        _sessions.append(s)
+        return AreaApplicationService(
+            area_repo=AreaRepository(s),
+            employee_repo=EmployeeRepository(s),
+            event_bus=_make_bus(),
         )
 
     @app.teardown_request
@@ -85,7 +105,8 @@ def _hr_flask(_hr_infra):
             s.close()
         _sessions.clear()
 
-    bp_module._make_service = _patched
+    emp_bp_module._make_service = _patched_emp
+    area_bp_module._make_service = _patched_area
     return app
 
 
